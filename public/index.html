@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Fastify Crypto Orderbook</title>
+  <style>
+    body { background: #121212; color: #fff; font-family: monospace; padding: 20px; }
+    
+    .orderbook-container {
+      display: flex;
+      gap: 30px;
+    }
+
+    .column {
+      width: 250px;
+    }
+
+    .row { 
+      display: flex; 
+      justify-content: space-between; 
+      padding: 4px 8px; 
+      margin: 2px 0; 
+      border-radius: 3px; 
+    }
+
+    .price-green { color: #22c55e; font-weight: bold; }
+    .price-red { color: #ef4444; font-weight: bold; }
+    .amount { color: #a1a1aa; }
+
+    /* CSS Animations cho Price Flash */
+    .flash-up { animation: flashGreen 0.4s ease-out; }
+    .flash-down { animation: flashRed 0.4s ease-out; }
+
+    @keyframes flashGreen {
+      0% { background-color: rgba(34, 197, 94, 0.4); }
+      100% { background-color: transparent; }
+    }
+    @keyframes flashRed {
+      0% { background-color: rgba(239, 68, 68, 0.4); }
+      100% { background-color: transparent; }
+    }
+  </style>
+</head>
+<body>
+
+  <h2>Orderbook: <span id="symbol">BTCUSDT</span></h2>
+
+  <div class="orderbook-container">
+    <!-- Cột Bids (Bên Mua - Xanh) -->
+    <div class="column">
+      <h3 style="color: #22c55e;">Bids (Buy)</h3>
+      <div id="bids"></div>
+    </div>
+
+    <!-- Cột Asks (Bên Bán - Đỏ) -->
+    <div class="column">
+      <h3 style="color: #ef4444;">Asks (Sell)</h3>
+      <div id="asks"></div>
+    </div>
+  </div>
+
+  <script>
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const ws = new WebSocket(protocol + '//' + window.location.host + '/ws/orderbook');
+
+    const bidsContainer = document.getElementById('bids');
+    const asksContainer = document.getElementById('asks');
+
+    // Dùng Map để lưu giá trị [price -> amount] của lần render trước
+    const lastBidsMap = new Map();
+    const lastAsksMap = new Map();
+
+    ws.onmessage = (event) => {
+      const { type, payload } = JSON.parse(event.data);
+      if (type === 'ORDERBOOK_UPDATE') {
+        document.getElementById('symbol').innerText = payload.symbol;
+        
+        // Render cả 2 bên
+        renderOrderbook(payload.bids, bidsContainer, lastBidsMap, 'price-green');
+        renderOrderbook(payload.asks, asksContainer, lastAsksMap, 'price-red');
+      }
+    };
+
+    /**
+     * Hàm dùng chung để render Bids / Asks
+     */
+    function renderOrderbook(orders, container, lastOrdersMap, priceClass) {
+      container.innerHTML = ''; // Clear DOM cũ
+
+      orders.forEach(([price, amount]) => {
+        const row = document.createElement('div');
+        row.className = 'row';
+
+        // Lấy lượng (amount) hoặc giá trước đó để so sánh
+        const prevAmount = lastOrdersMap.get(price);
+
+        if (prevAmount !== undefined) {
+          if (amount > prevAmount) {
+            row.classList.add('flash-up');
+          } else if (amount < prevAmount) {
+            row.classList.add('flash-down');
+          }
+          // Nếu amount === prevAmount thì không thêm class gì cả -> Không bị lỗi string rỗng!
+        }
+
+        row.innerHTML = `
+          <span class="${priceClass}">${price}</span>
+          <span class="amount">${amount}</span>
+        `;
+
+        container.appendChild(row);
+
+        // Lưu lại amount hiện tại của mức giá này cho lần render sau
+        lastOrdersMap.set(price, amount);
+      });
+    }
+  </script>
+</body>
+</html>
