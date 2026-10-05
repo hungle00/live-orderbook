@@ -4,6 +4,7 @@ import WebSocket from 'ws';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fastifyStatic from '@fastify/static';
+import { Orderbook } from './src/orderbook.js';
 
 const fastify = Fastify({ logger: true });
 
@@ -12,8 +13,18 @@ fastify.register(fastifyWebsocket);
 const orderbooks = new Map();
 const clients = new Set();
 const binanceConnections = new Map();
+const broadcastTimers = new Map();
 const INITIAL_RECONNECT_DELAY = 1000;
 const MAX_RECONNECT_DELAY = 30000;
+const BROADCAST_INTERVAL_MS = Number(process.env.ORDERBOOK_BROADCAST_INTERVAL_MS ?? 1000);
+const PORT = Number(process.env.PORT ?? 4000);
+
+if (!Number.isInteger(BROADCAST_INTERVAL_MS) || BROADCAST_INTERVAL_MS < 1) {
+  throw new Error('ORDERBOOK_BROADCAST_INTERVAL_MS must be a positive integer');
+}
+if (!Number.isInteger(PORT) || PORT < 1 || PORT > 65535) {
+  throw new Error('PORT must be an integer between 1 and 65535');
+}
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -32,43 +43,20 @@ function hasSubscribers(symbol) {
   return false;
 }
 
-function parseDepthMessage(raw, symbol) {
-  let parsed;
+function updateOrderbook(raw, symbol) {
   try {
-    parsed = JSON.parse(raw.toString());
-  } catch (err) {
-    fastify.log.warn({ err, symbol, payload: raw.toString().slice(0, 500) }, 'Invalid JSON from Binance');
-    return null;
-  }
-
-  if (!Array.isArray(parsed?.bids) || !Array.isArray(parsed?.asks)) {
-    fastify.log.warn({ symbol, payload: parsed }, 'Unexpected message from Binance');
-    return null;
-  }
-
-  const parseLevels = (levels) => levels.map((level) => {
-    if (!Array.isArray(level) || level.length < 2) {
-      throw new TypeError('Depth level must contain price and quantity');
+    const parsed = JSON.parse(raw.toString());
+    if (!Array.isArray(parsed?.bids) || !Array.isArray(parsed?.asks)) {
+      fastify.log.warn({ symbol, payload: parsed }, 'Unexpected message from Binance');
+      return null;
     }
 
-    const price = Number(level[0]);
-    const quantity = Number(level[1]);
-    if (!Number.isFinite(price) || !Number.isFinite(quantity) || price <= 0 || quantity < 0) {
-      throw new TypeError('Depth level contains an invalid price or quantity');
-    }
-
-    return [price, quantity];
-  });
-
-  try {
-    return {
-      symbol,
-      bids: parseLevels(parsed.bids),
-      asks: parseLevels(parsed.asks),
-      updated_at: Date.now(),
-    };
+    const orderbook = orderbooks.get(symbol) ?? new Orderbook(symbol);
+    orderbook.update(parsed.bids, parsed.asks);
+    orderbooks.set(symbol, orderbook);
+    return orderbook;
   } catch (err) {
-    fastify.log.warn({ err, symbol, payload: parsed }, 'Invalid depth data from Binance');
+    fastify.log.warn({ err, symbol, payload: raw.toString().slice(0, 500) }, 'Invalid depth data from Binance');
     return null;
   }
 }
@@ -99,14 +87,13 @@ function connectBinance(symbol) {
     });
 
     ws.on('message', (raw) => {
-      const orderbookData = parseDepthMessage(raw, symbol);
-      if (!orderbookData) {
+      const orderbook = updateOrderbook(raw, symbol);
+      if (!orderbook) {
         return;
       }
 
       state.retryDelay = INITIAL_RECONNECT_DELAY;
-      orderbooks.set(symbol, orderbookData);
-      broadcast(symbol, orderbookData);
+      scheduleBroadcast(symbol);
     });
 
     ws.on('close', (code, reason) => {
@@ -145,13 +132,15 @@ function stopBinance(symbol) {
 
   binanceConnections.delete(symbol);
   clearTimeout(state.retryTimer);
+  clearTimeout(broadcastTimers.get(symbol));
+  broadcastTimers.delete(symbol);
   if (state.socket && state.socket.readyState !== WebSocket.CLOSED) {
     state.socket.terminate();
   }
 }
 
-function broadcast(symbol, data) {
-  const message = JSON.stringify({ type: 'ORDERBOOK_UPDATE', payload: data });
+function broadcast(symbol, orderbook) {
+  const message = JSON.stringify({ type: 'ORDERBOOK_UPDATE', payload: orderbook.toJSON() });
 
   for (const client of clients) {
     if (client.readyState === WebSocket.OPEN && client.subscribedSymbol === symbol) {
@@ -164,6 +153,21 @@ function broadcast(symbol, data) {
   }
 }
 
+function scheduleBroadcast(symbol) {
+  if (broadcastTimers.has(symbol)) {
+    return;
+  }
+
+  const timer = setTimeout(() => {
+    broadcastTimers.delete(symbol);
+    const orderbook = orderbooks.get(symbol);
+    if (orderbook && hasSubscribers(symbol)) {
+      broadcast(symbol, orderbook);
+    }
+  }, BROADCAST_INTERVAL_MS);
+  broadcastTimers.set(symbol, timer);
+}
+
 fastify.register(async function (fastify) {
   fastify.get('/ws/orderbook', { websocket: true }, (socket) => {
     clients.add(socket);
@@ -171,7 +175,7 @@ fastify.register(async function (fastify) {
 
     const initialOrderbook = orderbooks.get(socket.subscribedSymbol);
     if (initialOrderbook) {
-      socket.send(JSON.stringify({ type: 'ORDERBOOK_UPDATE', payload: initialOrderbook }));
+      socket.send(JSON.stringify({ type: 'ORDERBOOK_UPDATE', payload: initialOrderbook.toJSON() }));
     }
     connectBinance(socket.subscribedSymbol);
 
@@ -195,7 +199,7 @@ fastify.register(async function (fastify) {
 
       const orderbook = orderbooks.get(symbol);
       if (orderbook && socket.readyState === WebSocket.OPEN) {
-        socket.send(JSON.stringify({ type: 'ORDERBOOK_UPDATE', payload: orderbook }));
+        socket.send(JSON.stringify({ type: 'ORDERBOOK_UPDATE', payload: orderbook.toJSON() }));
       }
       connectBinance(symbol);
 
@@ -216,8 +220,8 @@ fastify.register(async function (fastify) {
 
 const start = async () => {
   try {
-    await fastify.listen({ port: 4000 });
-    fastify.log.info('Fastify Orderbook Server runs at http://localhost:4000');
+    await fastify.listen({ port: PORT });
+    fastify.log.info(`Fastify Orderbook Server runs at http://localhost:${PORT}`);
   } catch (err) {
     fastify.log.error(err);
     process.exit(1);
