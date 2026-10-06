@@ -196,6 +196,7 @@ fastify.register(async function (fastify) {
 
       const previousSymbol = socket.subscribedSymbol;
       socket.subscribedSymbol = symbol;
+      fastify.log.info({ previousSymbol, newSymbol: symbol }, 'Browser changed orderbook subscription');
 
       const orderbook = orderbooks.get(symbol);
       if (orderbook && socket.readyState === WebSocket.OPEN) {

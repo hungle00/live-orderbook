@@ -2,60 +2,162 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Fastify Crypto Orderbook</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Live Crypto Orderbook</title>
   <style>
-    body { background: #121212; color: #fff; font-family: monospace; padding: 20px; }
-    
-    .orderbook-container {
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: #0d1117;
+      color: #c9d1d9;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace;
+      min-height: 100vh;
       display: flex;
-      gap: 30px;
+      justify-content: center;
+      align-items: center;
+      padding: 20px;
     }
 
-    .column {
-      width: 250px;
+    .card {
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 12px;
+      padding: 24px;
+      width: 100%;
+      max-width: 600px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
     }
 
-    .row { 
-      display: flex; 
-      justify-content: space-between; 
-      padding: 4px 8px; 
-      margin: 2px 0; 
-      border-radius: 3px; 
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid #30363d;
     }
 
-    .price-green { color: #22c55e; font-weight: bold; }
-    .price-red { color: #ef4444; font-weight: bold; }
-    .amount { color: #a1a1aa; }
+    .title {
+      font-size: 1.25rem;
+      font-weight: 600;
+      color: #f0f6fc;
+    }
 
-    /* CSS Animations cho Price Flash */
+    /* Styled Select Dropdown */
+    .symbol-select {
+      background-color: #21262d;
+      color: #f0f6fc;
+      border: 1px solid #30363d;
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-weight: bold;
+      font-size: 0.95rem;
+      outline: none;
+      cursor: pointer;
+      transition: border-color 0.2s;
+    }
+
+    .symbol-select:hover {
+      border-color: #8b949e;
+    }
+
+    .orderbook-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+    }
+
+    .column-title {
+      font-size: 0.9rem;
+      font-weight: 700;
+      margin-bottom: 8px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .title-bids { color: #22c55e; }
+    .title-asks { color: #ef4444; }
+
+    /* Table Header CSS */
+    .table-header {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.75rem;
+      color: #8b949e;
+      padding: 4px 8px;
+      border-bottom: 1px solid #21262d;
+      margin-bottom: 6px;
+      font-weight: 600;
+    }
+
+    .row {
+      display: flex;
+      justify-content: space-between;
+      padding: 5px 8px;
+      margin: 2px 0;
+      border-radius: 4px;
+      font-size: 0.85rem;
+      transition: background-color 0.3s;
+    }
+
+    .price-green { color: #22c55e; font-weight: 600; }
+    .price-red { color: #ef4444; font-weight: 600; }
+    .amount { color: #8b949e; }
+
+    /* Price Flash Animations */
     .flash-up { animation: flashGreen 0.4s ease-out; }
     .flash-down { animation: flashRed 0.4s ease-out; }
 
     @keyframes flashGreen {
-      0% { background-color: rgba(34, 197, 94, 0.4); }
+      0% { background-color: rgba(34, 197, 94, 0.35); }
       100% { background-color: transparent; }
     }
     @keyframes flashRed {
-      0% { background-color: rgba(239, 68, 68, 0.4); }
+      0% { background-color: rgba(239, 68, 68, 0.35); }
       100% { background-color: transparent; }
     }
   </style>
 </head>
 <body>
 
-  <h2>Orderbook: <span id="symbol">BTCUSDT</span></h2>
-
-  <div class="orderbook-container">
-    <!-- Cột Bids (Bên Mua - Xanh) -->
-    <div class="column">
-      <h3 style="color: #22c55e;">Bids (Buy)</h3>
-      <div id="bids"></div>
+  <div class="card">
+    <div class="header">
+      <div class="title">Live Orderbook</div>
+      
+      <!-- Select Box chọn 5 Cặp Coin -->
+      <select id="symbolSelect" class="symbol-select">
+        <option value="BTCUSDT">BTC / USDT</option>
+        <option value="ETHUSDT">ETH / USDT</option>
+        <option value="SOLUSDT">SOL / USDT</option>
+        <option value="BNBUSDT">BNB / USDT</option>
+        <option value="XRPUSDT">XRP / USDT</option>
+      </select>
     </div>
 
-    <!-- Cột Asks (Bên Bán - Đỏ) -->
-    <div class="column">
-      <h3 style="color: #ef4444;">Asks (Sell)</h3>
-      <div id="asks"></div>
+    <div class="orderbook-grid">
+      <!-- Cột Bids -->
+      <div>
+        <div class="column-title title-bids">Bids (Buy)</div>
+        <div class="table-header">
+          <span>Price (USDT)</span>
+          <span>Amount</span>
+        </div>
+        <div id="bids"></div>
+      </div>
+
+      <!-- Cột Asks -->
+      <div>
+        <div class="column-title title-asks">Asks (Sell)</div>
+        <div class="table-header">
+          <span>Price (USDT)</span>
+          <span>Amount</span>
+        </div>
+        <div id="asks"></div>
+      </div>
     </div>
   </div>
 
@@ -63,35 +165,55 @@
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const ws = new WebSocket(protocol + '//' + window.location.host + '/ws/orderbook');
 
+    const symbolSelect = document.getElementById('symbolSelect');
     const bidsContainer = document.getElementById('bids');
     const asksContainer = document.getElementById('asks');
 
-    // Dùng Map để lưu giá trị [price -> amount] của lần render trước
     const lastBidsMap = new Map();
     const lastAsksMap = new Map();
+
+    ws.onopen = () => {
+      // Khi vừa kết nối, gửi Subscribe cặp mặc định
+      subscribeSymbol(symbolSelect.value);
+    };
 
     ws.onmessage = (event) => {
       const { type, payload } = JSON.parse(event.data);
       if (type === 'ORDERBOOK_UPDATE') {
-        document.getElementById('symbol').innerText = payload.symbol;
-        
-        // Render cả 2 bên
         renderOrderbook(payload.bids, bidsContainer, lastBidsMap, 'price-green');
         renderOrderbook(payload.asks, asksContainer, lastAsksMap, 'price-red');
       }
     };
 
-    /**
-     * Hàm dùng chung để render Bids / Asks
-     */
+    // Bắt sự kiện người dùng đổi coin từ Select Box
+    symbolSelect.addEventListener('change', (e) => {
+      const newSymbol = e.target.value;
+      
+      // Xóa bộ nhớ giá cũ khi đổi sang coin mới
+      lastBidsMap.clear();
+      lastAsksMap.clear();
+      bidsContainer.innerHTML = '';
+      asksContainer.innerHTML = '';
+
+      subscribeSymbol(newSymbol);
+    });
+
+    function subscribeSymbol(symbol) {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+          action: 'SUBSCRIBE',
+          symbol: symbol
+        }));
+      }
+    }
+
     function renderOrderbook(orders, container, lastOrdersMap, priceClass) {
-      container.innerHTML = ''; // Clear DOM cũ
+      container.innerHTML = '';
 
       orders.forEach(([price, amount]) => {
         const row = document.createElement('div');
         row.className = 'row';
 
-        // Lấy lượng (amount) hoặc giá trước đó để so sánh
         const prevAmount = lastOrdersMap.get(price);
 
         if (prevAmount !== undefined) {
@@ -100,7 +222,6 @@
           } else if (amount < prevAmount) {
             row.classList.add('flash-down');
           }
-          // Nếu amount === prevAmount thì không thêm class gì cả -> Không bị lỗi string rỗng!
         }
 
         row.innerHTML = `
@@ -109,8 +230,6 @@
         `;
 
         container.appendChild(row);
-
-        // Lưu lại amount hiện tại của mức giá này cho lần render sau
         lastOrdersMap.set(price, amount);
       });
     }
