@@ -1,4 +1,9 @@
 {
+  "name": "crypto-orderbook",
+  "version": "1.0.0",
+  "scripts": {
+    "start": "node server.js"
+  },
   "dependencies": {
     "@fastify/static": "^10.1.5",
     "@fastify/websocket": "^11.3.3",

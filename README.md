@@ -2,6 +2,8 @@
 
 A real-time BTC/USDT order book showing bids, asks, and the mid-price, powered by the Binance WebSocket stream.
 
+View demo at: https://live-orderbook.fly.dev/
+
 ## Tech stack
 
 - Nodejs

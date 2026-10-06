@@ -17,7 +17,7 @@ const broadcastTimers = new Map();
 const INITIAL_RECONNECT_DELAY = 1000;
 const MAX_RECONNECT_DELAY = 30000;
 const BROADCAST_INTERVAL_MS = Number(process.env.ORDERBOOK_BROADCAST_INTERVAL_MS ?? 1000);
-const PORT = Number(process.env.PORT ?? 4000);
+const PORT = Number(process.env.PORT ?? 3000);
 
 if (!Number.isInteger(BROADCAST_INTERVAL_MS) || BROADCAST_INTERVAL_MS < 1) {
   throw new Error('ORDERBOOK_BROADCAST_INTERVAL_MS must be a positive integer');
@@ -220,7 +220,7 @@ fastify.register(async function (fastify) {
 
 const start = async () => {
   try {
-    await fastify.listen({ port: PORT });
+    await fastify.listen({ port: PORT, host: "0.0.0.0" });
     fastify.log.info(`Fastify Orderbook Server runs at http://localhost:${PORT}`);
   } catch (err) {
     fastify.log.error(err);
